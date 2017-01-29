@@ -103,19 +103,6 @@ def multistart(num_variables, f, g=None, pargs=None, numberOfSamplePoints=10, nu
     solnSample_selected = {}
 
     ### Create an NLP solver
-    x = SX.sym("x", num_variables)
-    if g is not None:
-        if pargs is not None:
-            nlp = {"x": x, "f": f(x, **pargs), "g": g(x, **pargs)}
-        else:
-            nlp = {"x": x, "f": f(x), "g": g(x)}
-    else:
-        if pargs is not None:
-            nlp = {"x": x, "f": f(x, **pargs)}
-        else:
-            nlp = {"x": x, "f": f(x)}
-    solver = nlpsol("solver", solvername, nlp, opts)
-
     while (iterCount <= iterationLimit):
         ### Generate samples and solve local NLP problems
         x0Sample = {}
@@ -126,9 +113,10 @@ def multistart(num_variables, f, g=None, pargs=None, numberOfSamplePoints=10, nu
         if threadLimit == 1:
             # Serial: solve NLP for each sample point
             for i in range(numberOfSamplePoints - len(solnSample_selected)):
-                solnSample[i] = solver(x0=x0Sample[i], **solveropts)
-                if solver.stats()["return_status"] != "Solve_Succeeded":
-                    solnSample[i]["f"] = np.Inf
+                tmpsoln = _solveSample(num_variables, f, g, pargs, opts, x0Sample[i], solvername, solveropts, i)
+                sample_id = tmpsoln["sample_id"]
+                tmpsoln.pop("sample_id", None)
+                solnSample[sample_id] = tmpsoln
         else:
             # Parallel: solve NLP for each sample point, then convert list to dict
             tmp = Parallel(n_jobs=threadLimit)(
@@ -141,9 +129,10 @@ def multistart(num_variables, f, g=None, pargs=None, numberOfSamplePoints=10, nu
 
         if iterCount == 1 and useInitialPoint:
             i = len(x0Sample)
-            solnSample[i] = solver(x0=x0, **solveropts)
-            if solver.stats()["return_status"] != "Solve_Succeeded":
-                solnSample[i]["f"] = np.Inf
+            tmpsoln = _solveSample(num_variables, f, g, pargs, opts, x0, solvername, solveropts, i)
+            sample_id = tmpsoln["sample_id"]
+            tmpsoln.pop("sample_id", None)
+            solnSample[sample_id] = tmpsoln
 
         solnSample_selected = dict(sorted({**solnSample_selected, **solnSample}.items(), key=lambda x: x[1]["f"])[
                                    :numberOfSelectedSamplePoints])
@@ -161,9 +150,10 @@ def multistart(num_variables, f, g=None, pargs=None, numberOfSamplePoints=10, nu
             i += 1
         if threadLimit == 1:
             for i in range(len(solncombs)):
-                solnSample_selected_mean[i] = solver(x0=x0Sample_selected[i], **solveropts)
-                if solver.stats()["return_status"] != "Solve_Succeeded":
-                    solnSample_selected_mean[i]["f"] = np.Inf
+                tmpsoln = _solveSample(num_variables, f, g, pargs, opts, x0Sample_selected[i], solvername, solveropts, i)
+                sample_id = tmpsoln["sample_id"]
+                tmpsoln.pop("sample_id", None)
+                solnSample_selected_mean[sample_id] = tmpsoln
         else:
             tmp = Parallel(n_jobs=threadLimit)(
                 delayed(_solveSample)(num_variables, f, g, pargs, opts, x0Sample_selected[i], solvername, solveropts, i)
